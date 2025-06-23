@@ -1,0 +1,96 @@
+SQLite Script 
+-- Local Authority Code Updates
+UPDATE Covid_Statistics
+SET LA_name = "Folkestone and Hythe", LA_code = "E07000112"
+WHERE LA_code IN ("E07000112");
+
+UPDATE Covid_Statistics
+SET LA_name = "Somerset West and Taunton", LA_code = "E07000246"
+WHERE LA_code IN ("E07000190", "E07000191");
+
+UPDATE Covid_Statistics
+SET LA_name = "West Suffolk", LA_code = "E07000245"
+WHERE LA_code IN ("E07000201", "E07000204");
+
+UPDATE Covid_Statistics
+SET LA_name = "East Suffolk", LA_code = "E07000244"
+WHERE LA_code IN ("E07000205", "E07000206");
+
+UPDATE Covid_Statistics
+SET LA_name = "Dorset", LA_code = "E06000059"
+WHERE LA_code IN ("E07000049", "E07000050", "E07000053", "E07000051", "E07000052");
+
+UPDATE Covid_Statistics
+SET LA_name = "Bournemouth, Christchurch and Poole", LA_code = "E06000058"
+WHERE LA_code IN ("E06000028", "E07000048", "E06000029");
+
+UPDATE Covid_Statistics
+SET LA_name = "Buckinghamshire", LA_code = "E06000060"
+WHERE LA_code IN ("E07000004", "E07000005", "E07000006", "E07000007");
+
+UPDATE Covid_Statistics
+SET LA_name = "West Northamptonshire", LA_code = "E06000062"
+WHERE LA_code IN ("E07000151", "E07000154", "E07000155");
+
+UPDATE Covid_Statistics
+SET LA_name = "North Northamptonshire", LA_code = "E06000061"
+WHERE LA_code IN ("E07000150", "E07000152", "E07000153", "E07000156");
+
+UPDATE Covid_Statistics
+SET LA_name = "Somerset", LA_code = "E06000066"
+WHERE LA_code IN ("E07000187", "E07000188", "E07000189", "E07000246");
+
+UPDATE Covid_Statistics
+SET LA_name = "North Yorkshire", LA_code = "E06000065"
+WHERE LA_code IN ("E07000163", "E07000164", "E07000165", "E07000166", "E07000167", "E07000168", "E07000169");
+
+UPDATE Covid_Statistics
+SET LA_name = "Westmorland and Furness", LA_code = "E06000064"
+WHERE LA_code IN ("E07000027", "E07000030", "E07000031");
+
+UPDATE Covid_Statistics
+SET LA_name = "Cumberland", LA_code = "E06000063"
+WHERE LA_code IN ("E07000026", "E07000028", "E07000029");
+
+-- Aggregating COVID deaths by LA_code
+CREATE TABLE Covid_Deaths AS
+SELECT LA_code, SUM(Covid_deaths) AS Total_Covid_Deaths
+FROM Covid_Statistics
+GROUP BY LA_code;
+
+-- Joining Covid_Deaths with Covid_Statistics
+CREATE TABLE Merged_Covid_Data AS
+SELECT c.LA_name, c.LA_code, c.Household_of_One_person, c.Household_Composition_One_person_Aged_65,
+       c.Household_Composition_One_family, c.youngerage, c.elderage, c.Part_time_Self_Employee, c.Full_time_Self_Employee, 
+       c.Good_health, c.Bad_health, c."10km_to_20km", c.Works_from_home, c.Female, c.Male,
+       d.Total_Covid_Deaths
+FROM Covid_Statistics c
+LEFT JOIN Covid_Deaths d ON c.LA_code = d.LA_code;
+
+-- Scaling All Variables per Thousand Residents
+CREATE TABLE Scaled_Covid_Data AS
+SELECT LA_name, LA_code,
+       (Household_of_One_person * 1000.0 / (Female + Male)) AS Household_One_Person_per_thousand,
+       (Household_Composition_One_person_Aged_65 * 1000.0 / (Female + Male)) AS Household_One_Person_Aged_65_per_thousand,
+       (Household_Composition_One_family * 1000.0 / (Female + Male)) AS Household_One_Family_per_thousand,
+       (youngerage * 1000.0 / (Female + Male)) AS Younger_Age_per_thousand,
+       (elderage * 1000.0 / (Female + Male)) AS Elder_Age_per_thousand,
+       (Part_time_Self_Employee * 1000.0 / (Female + Male)) AS Part_Time_Self_Employed_per_thousand,
+       (Full_time_Self_Employee * 1000.0 / (Female + Male)) AS Full_Time_Self_Employed_per_thousand,
+       (Good_health * 1000.0 / (Female + Male)) AS Good_Health_per_thousand,
+       (Bad_health * 1000.0 / (Female + Male)) AS Bad_Health_per_thousand,
+       ("10km_to_20km" * 1000.0 / (Female + Male)) AS Distance_10km_20km_per_thousand,
+       (Works_from_home * 1000.0 / (Female + Male)) AS Works_From_Home_per_thousand,
+       (Total_Covid_Deaths * 1000.0 / (Female + Male)) AS Covid_Deaths_per_thousand
+FROM Merged_Covid_Data;
+-- Set mode to CSV
+.mode csv 
+
+-- Output the final table to a CSV file
+.output 'Covid_Deaths_England.csv' 
+
+-- Selecting the final cleaned data
+SELECT * FROM Scaled_Covid_Data;  
+
+-- Reset output back to normal
+.output stdout
