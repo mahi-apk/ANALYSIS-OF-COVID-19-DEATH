@@ -1,0 +1,197 @@
+# Set working directory (Change the path as per your system)
+setwd("C:\\Users\\MAHI\\Dropbox\\My PC (LAPTOP-O8LGAOGC)\\Downloads")
+
+# Check the working directory
+print(getwd())
+
+# Load required libraries
+library(ggplot2)
+library(car)
+library(corrplot)
+library(psych)
+library(factoextra)
+
+# Check if the file exists before reading
+if (!file.exists("processed_data.csv")) {
+  stop("Error: The file 'processed_data.csv' does not exist in the specified directory.")
+}
+
+# Read in data from CSV file
+Covid <- read.csv("processed_data.csv", stringsAsFactors = FALSE)
+
+# Display structure and first few rows
+print(head(Covid))
+print(str(Covid))
+
+# Convert non-numeric columns (e.g., 'LA_name', 'LA_code') to factors
+numeric_vars <- sapply(Covid, is.numeric)
+Covid_numeric <- Covid[, numeric_vars]  # Keep only numeric columns
+
+# Exploratory Data Analysis (EDA) with error handling
+for (var in colnames(Covid_numeric)) {
+  png(paste0(var, "_histogram_density.png"))
+  hist(
+    Covid_numeric[[var]], 
+    main = paste("Histogram of", var), 
+    xlab = var, 
+    col = "lightblue", 
+    border = "black", 
+    prob = TRUE
+  )
+  lines(
+    density(Covid_numeric[[var]], na.rm = TRUE), 
+    col = "red", 
+    lwd = 2
+  )
+  dev.off()
+  
+  # Box Plot
+  png(paste0(var, "_boxplot.png"))
+  boxplot(Covid_numeric[[var]], main = paste("Box Plot of", var), ylab = var, col = "lightgreen")
+  dev.off()
+  
+  # Install 'car' package if not already installed
+  if (!require(car)) install.packages("car", dependencies = TRUE)
+  
+  # Load the package
+  library(car)
+  
+  # Q-Q Plot (with try-catch to avoid errors)
+  png(paste0(var, "_qqplot.png"))
+  tryCatch({
+    qqPlot(Covid_numeric[[var]], main = paste("Q-Q Plot of", var), col = "blue")
+  }, error = function(e) {
+    message("Skipping Q-Q plot for ", var, " due to error: ", e$message)
+  })
+  dev.off()
+}
+
+# Normality Tests
+ks_results <- numeric()
+sw_results <- numeric()
+variables <- colnames(Covid_numeric)
+
+for (var in variables) {
+  data <- Covid_numeric[[var]]
+  
+  # Kolmogorov-Smirnov Test
+  ks_test <- ks.test(data, "pnorm", mean(data, na.rm = TRUE), sd(data, na.rm = TRUE))
+  ks_results <- c(ks_results, ks_test$p.value)
+  
+  # Shapiro-Wilk Test
+  if (length(data) <= 5000) {  # Shapiro-Wilk test is valid only for smaller samples
+    sw_test <- shapiro.test(data)
+    sw_results <- c(sw_results, sw_test$p.value)
+  } else {
+    sw_results <- c(sw_results, NA)
+  }
+}
+
+# Combine results into a data frame
+results_table <- data.frame(
+  Variable = variables,
+  KS_p_value = ks_results,
+  KS_Normal = ifelse(ks_results > 0.05, "Yes", "No"),
+  SW_p_value = sw_results,
+  SW_Normal = ifelse(sw_results > 0.05, "Yes", "No")
+)
+
+# Print the results table
+print(results_table)
+
+# Compute Spearman’s Correlation with Total_deaths
+if (!"Covid_deaths" %in% colnames(Covid_numeric)) {
+  stop("Error: 'Covid_deaths' column not found in dataset.")
+}
+
+dependent_var <- Covid_numeric$Covid_deaths
+independent_vars <- setdiff(names(Covid_numeric), "Covid_deaths")
+
+Covid_2 <- data.frame(Variable = character(), Correlation = numeric(), stringsAsFactors = FALSE)
+
+for (var in independent_vars) {
+  independent_var <- Covid_numeric[[var]]
+  
+  # Calculate Spearman's correlation
+  correlation <- cor(dependent_var, independent_var, method = "spearman", use = "complete.obs")
+  
+  # Append results to the dataframe
+  Covid_2 <- rbind(Covid_2, data.frame(Variable = var, Correlation = correlation))
+}
+
+# Print correlation results
+print(Covid_2)
+
+# Filter variables based on correlation threshold (absolute value > 0.2)
+filtered <- Covid_2[abs(Covid_2$Correlation) > 0.20, ]
+print(filtered)
+
+# Compute correlation matrix including all numeric variables
+cor_matrix <- cor(Covid_numeric, use = "complete.obs", method = "spearman")
+
+# Plot correlation matrix
+png("correlation_plot_with_all_variables.png", width = 2000, height = 2000)
+corrplot(
+  cor_matrix, 
+  method = "color",        
+  type = "upper",          
+  tl.col = "black",        
+  tl.srt = 45,             
+  addCoef.col = "black",   
+  number.cex = 0.7,        
+  col = colorRampPalette(c("red", "white", "blue"))(200)
+)
+dev.off()
+
+# Perform Principal Component Analysis (PCA)
+pca_vars <- colnames(Covid_numeric)
+
+pca_data <- Covid_numeric[, pca_vars]
+pca_data <- na.omit(pca_data)  # Ensure no missing values
+
+# Load the psych package (if not installed, install it first)
+install.packages("psych")  # Run this only if psych is not installed
+library(psych)
+
+# Remove the 'Covid_deaths' column from the dataset
+pca_data_no_covid <- pca_data[, !(colnames(pca_data) %in% c("Covid_deaths"))]
+
+# Perform KMO test 
+kmo_test_no_covid <- KMO(pca_data_no_covid)
+
+# Print the new KMO results
+print(kmo_test_no_covid)
+
+
+# Compute Eigenvalues
+eigen_values <- eigen(cor(pca_data))$values
+print(eigen_values)
+
+# Scree Plot
+library(factoextra)
+fviz_eig(prcomp(pca_data, scale. = TRUE), addlabels = TRUE, ylim = c(0, max(eigen_values) + 1))
+
+
+# Cumulative Scree Plot
+cumulative_variance <- cumsum(eigen_values / sum(eigen_values))
+plot(cumulative_variance, type = "b", xlab = "Number of Factors", ylab = "Cumulative Variance Explained", 
+     main = "Cumulative Scree Plot", ylim = c(0, 1))
+abline(h = c(0.8, 0.9, 0.95), col = "red", lty = 2)
+
+# Perform PCA (Varimax Rotation) with 4 Factors
+pca_results <- principal(pca_data, nfactors = 4, rotate = "varimax", scores = TRUE)
+print(pca_results)
+
+# Multiple Linear Regression
+regression_vars <- colnames(Covid_numeric)
+regression_data <- Covid_numeric[, regression_vars]
+regression_data <- na.omit(regression_data)  # Ensure no missing values
+
+final_data <- data.frame(dependent_var, regression_data)
+# Fit the multiple linear regression model
+model <- lm(dependent_var ~ ., data = final_data)
+summary(model)
+# Check for multicollinearity using VIF
+vif_values <- vif(model)
+print(sqrt(vif(model)) > 2)
+print("Analysis completed successfully!")
